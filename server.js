@@ -1,126 +1,104 @@
 const express = require("express");
-const puppeteer = require("puppeteer-core");
-const chromium = require("@sparticuz/chromium");
 const axios = require("axios");
 
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("M3U8 Scraper + Proxy API Running");
+  res.send("Dynamic HLS Proxy Running");
 });
-
-
-/* SCRAPER */
-
-app.get("/scrape", async (req, res) => {
-
-  const url = req.query.url;
-  if (!url) return res.json({ error: "Missing url parameter" });
-
-  let browser;
-
-  try {
-
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless
-    });
-
-    const page = await browser.newPage();
-
-    let m3u8 = null;
-
-    page.on("request", request => {
-      const r = request.url();
-      if (r.includes(".m3u8")) m3u8 = r;
-    });
-
-    await page.goto(url, { waitUntil: "networkidle2" });
-
-    await new Promise(r => setTimeout(r, 5000));
-
-    await browser.close();
-
-    res.json({ m3u8 });
-
-  } catch (err) {
-
-    if (browser) await browser.close();
-    res.json({ error: err.message });
-
-  }
-
-});
-
-
-/* PROXY */
 
 app.get("/proxy/*", async (req, res) => {
 
-  const targetUrl = req.params[0];
+  const target = req.params[0];
+
+  if (!target) return res.send("Missing URL");
 
   try {
 
-    const response = await axios.get(targetUrl, {
+    /* extract domain dynamically */
+
+    const urlObj = new URL(target);
+    const origin = urlObj.origin;
+    const referer = origin + "/";
+
+    const response = await axios.get(target, {
+      responseType: "arraybuffer",
       headers: {
-        "Referer": "https://hdstream4u.com/",
-        "Origin": "https://hdstream4u.com",
+        "Referer": referer,
+        "Origin": origin,
         "User-Agent": "Mozilla/5.0"
       }
     });
 
-    let data = response.data;
-
-    if (targetUrl.includes(".m3u8")) {
-
-  const base = targetUrl.substring(0, targetUrl.lastIndexOf("/") + 1);
-
-  data = data.split("\n").map(line => {
-
-    /* rewrite audio/subtitle playlists */
-
-    if (line.includes('URI="')) {
-
-      return line.replace(/URI="([^"]+)"/, (match, uri) => {
-
-        const absolute = uri.startsWith("http")
-          ? uri
-          : base + uri;
-
-        return `URI="/proxy/${absolute}"`;
-
-      });
-
-    }
-
-    /* rewrite segments and playlists */
-
-    if (
-      line.endsWith(".ts") ||
-      line.endsWith(".m4s") ||
-      line.endsWith(".aac") ||
-      line.endsWith(".m3u8")
-    ) {
-
-      const absolute = line.startsWith("http")
-        ? line
-        : base + line;
-
-      return `/proxy/${absolute}`;
-
-    }
-
-    return line;
-
-  }).join("\n");
-
-  res.set("Content-Type", "application/vnd.apple.mpegurl");
-}
-
     res.set("Access-Control-Allow-Origin", "*");
 
-    res.send(data);
+    /* handle m3u8 playlists */
+
+    if (target.includes(".m3u8")) {
+
+      let data = response.data.toString();
+
+      const base = target.substring(0, target.lastIndexOf("/") + 1);
+
+      data = data.split("\n").map(line => {
+
+        /* rewrite audio/subtitle playlists */
+
+        if (line.includes('URI="')) {
+
+          return line.replace(/URI="([^"]+)"/, (match, uri) => {
+
+            const absolute = uri.startsWith("http")
+              ? uri
+              : base + uri;
+
+            return `URI="/proxy/${absolute}"`;
+
+          });
+
+        }
+
+        /* rewrite nested playlists */
+
+        if (line.endsWith(".m3u8")) {
+
+          const absolute = line.startsWith("http")
+            ? line
+            : base + line;
+
+          return `/proxy/${absolute}`;
+
+        }
+
+        /* rewrite segments */
+
+        if (
+          line.endsWith(".ts") ||
+          line.endsWith(".m4s") ||
+          line.endsWith(".aac")
+        ) {
+
+          const absolute = line.startsWith("http")
+            ? line
+            : base + line;
+
+          return `/proxy/${absolute}`;
+
+        }
+
+        return line;
+
+      }).join("\n");
+
+      res.set("Content-Type", "application/vnd.apple.mpegurl");
+
+      return res.send(data);
+    }
+
+    /* return video segments */
+
+    res.set("Content-Type", response.headers["content-type"]);
+    res.send(response.data);
 
   } catch (err) {
 
@@ -130,7 +108,6 @@ app.get("/proxy/*", async (req, res) => {
 
 });
 
-
 app.listen(3000, () => {
-  console.log("Server running on port 3000");
+  console.log("Proxy server running on port 3000");
 });
