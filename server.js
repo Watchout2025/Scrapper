@@ -9,7 +9,8 @@ app.get("/", (req, res) => {
   res.send("M3U8 Scraper + Proxy API Running");
 });
 
-/* SCRAPE M3U8 FROM PAGE */
+
+/* SCRAPER */
 
 app.get("/scrape", async (req, res) => {
 
@@ -53,16 +54,15 @@ app.get("/scrape", async (req, res) => {
 });
 
 
-/* PROXY + REWRITE M3U8 */
+/* PROXY */
 
-app.get("/proxy", async (req, res) => {
+app.get("/proxy/*", async (req, res) => {
 
-  const url = req.query.url;
-  if (!url) return res.send("Missing url");
+  const targetUrl = req.params[0];
 
   try {
 
-    const response = await axios.get(url, {
+    const response = await axios.get(targetUrl, {
       headers: {
         "Referer": "https://hdstream4u.com/",
         "Origin": "https://hdstream4u.com",
@@ -72,9 +72,9 @@ app.get("/proxy", async (req, res) => {
 
     let data = response.data;
 
-    if (url.includes(".m3u8")) {
+    if (targetUrl.includes(".m3u8")) {
 
-      const base = url.substring(0, url.lastIndexOf("/") + 1);
+      const base = targetUrl.substring(0, targetUrl.lastIndexOf("/") + 1);
 
       data = data.split("\n").map(line => {
 
@@ -89,7 +89,7 @@ app.get("/proxy", async (req, res) => {
             ? line
             : base + line;
 
-          return `/proxy?url=${encodeURIComponent(absolute)}`;
+          return `/proxy/${absolute}`;
 
         }
 
@@ -112,6 +112,7 @@ app.get("/proxy", async (req, res) => {
   }
 
 });
+
 
 app.listen(3000, () => {
   console.log("Server running on port 3000");
