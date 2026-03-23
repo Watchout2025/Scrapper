@@ -74,32 +74,49 @@ app.get("/proxy/*", async (req, res) => {
 
     if (targetUrl.includes(".m3u8")) {
 
-      const base = targetUrl.substring(0, targetUrl.lastIndexOf("/") + 1);
+  const base = targetUrl.substring(0, targetUrl.lastIndexOf("/") + 1);
 
-      data = data.split("\n").map(line => {
+  data = data.split("\n").map(line => {
 
-        if (
-          line.endsWith(".ts") ||
-          line.endsWith(".m4s") ||
-          line.endsWith(".aac") ||
-          line.endsWith(".m3u8")
-        ) {
+    /* rewrite audio/subtitle playlists */
 
-          const absolute = line.startsWith("http")
-            ? line
-            : base + line;
+    if (line.includes('URI="')) {
 
-          return `/proxy/${absolute}`;
+      return line.replace(/URI="([^"]+)"/, (match, uri) => {
 
-        }
+        const absolute = uri.startsWith("http")
+          ? uri
+          : base + uri;
 
-        return line;
+        return `URI="/proxy/${absolute}"`;
 
-      }).join("\n");
-
-      res.set("Content-Type", "application/vnd.apple.mpegurl");
+      });
 
     }
+
+    /* rewrite segments and playlists */
+
+    if (
+      line.endsWith(".ts") ||
+      line.endsWith(".m4s") ||
+      line.endsWith(".aac") ||
+      line.endsWith(".m3u8")
+    ) {
+
+      const absolute = line.startsWith("http")
+        ? line
+        : base + line;
+
+      return `/proxy/${absolute}`;
+
+    }
+
+    return line;
+
+  }).join("\n");
+
+  res.set("Content-Type", "application/vnd.apple.mpegurl");
+}
 
     res.set("Access-Control-Allow-Origin", "*");
 
