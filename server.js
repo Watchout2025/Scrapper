@@ -1,21 +1,27 @@
 const express = require("express");
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-core");
+const chromium = require("@sparticuz/chromium");
 
 const app = express();
+
+app.get("/", (req, res) => {
+  res.send("M3U8 Scraper API Running");
+});
 
 app.get("/scrape", async (req, res) => {
 
   const url = req.query.url;
-
-  if (!url) return res.json({ error: "Missing url" });
+  if (!url) return res.json({ error: "Missing url parameter" });
 
   let browser;
 
   try {
 
     browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox","--disable-setuid-sandbox"]
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless
     });
 
     const page = await browser.newPage();
@@ -23,13 +29,8 @@ app.get("/scrape", async (req, res) => {
     let m3u8 = null;
 
     page.on("request", request => {
-
-      const reqUrl = request.url();
-
-      if (reqUrl.includes(".m3u8")) {
-        m3u8 = reqUrl;
-      }
-
+      const r = request.url();
+      if (r.includes(".m3u8")) m3u8 = r;
     });
 
     await page.goto(url, { waitUntil: "networkidle2" });
@@ -43,11 +44,12 @@ app.get("/scrape", async (req, res) => {
   } catch (err) {
 
     if (browser) await browser.close();
-
     res.json({ error: err.message });
 
   }
 
 });
 
-app.listen(3000, () => console.log("Server running"));
+app.listen(3000, () => {
+  console.log("Server running");
+});
