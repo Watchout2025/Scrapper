@@ -3,40 +3,51 @@ const puppeteer = require("puppeteer");
 
 const app = express();
 
-app.get("/", (req,res)=>{
-  res.send("Scraper running");
-});
-
-app.get("/scrape", async (req,res)=>{
+app.get("/scrape", async (req, res) => {
 
   const url = req.query.url;
 
-  let stream = null;
+  if (!url) return res.json({ error: "Missing url" });
 
-  const browser = await puppeteer.launch({
-  headless: true,
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox"
-  ]
+  let browser;
+
+  try {
+
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox","--disable-setuid-sandbox"]
+    });
+
+    const page = await browser.newPage();
+
+    let m3u8 = null;
+
+    page.on("request", request => {
+
+      const reqUrl = request.url();
+
+      if (reqUrl.includes(".m3u8")) {
+        m3u8 = reqUrl;
+      }
+
+    });
+
+    await page.goto(url, { waitUntil: "networkidle2" });
+
+    await new Promise(r => setTimeout(r, 5000));
+
+    await browser.close();
+
+    res.json({ m3u8 });
+
+  } catch (err) {
+
+    if (browser) await browser.close();
+
+    res.json({ error: err.message });
+
+  }
+
 });
 
-  const page = await browser.newPage();
-
-  page.on("response", response=>{
-    const u = response.url();
-    if(u.includes(".m3u8")) stream = u;
-  });
-
-  await page.goto(url,{waitUntil:"networkidle2"});
-
-  await page.waitForTimeout(5000);
-
-  await browser.close();
-
-  res.json({m3u8:stream});
-});
-
-app.listen(3000,()=>{
-  console.log("Server running");
-});
+app.listen(3000, () => console.log("Server running"));
